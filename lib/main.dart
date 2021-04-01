@@ -47,19 +47,42 @@ class MyHomePage extends StatefulWidget {
   _MyHomePageState createState() => _MyHomePageState();
 }
 
+class DeviceDescriptor {
+  late String id;
+  late String name;
+
+  DeviceDescriptor(this.id, this.name);
+}
+
 class _MyHomePageState extends State<MyHomePage> {
-  List<String> _deviceIdList = [];
+  List<DeviceDescriptor> _deviceList = [];
   bool _isScanning = false;
+  String _statusText = 'no device connected.';
+
+  @override
+  void initState() {
+    super.initState();
+
+    QuickBlue.setConnectionHandler((deviceId, state) {
+      Developer.log('$deviceId ${state.value}', name: 'bluetooth');
+      var device = _deviceList.firstWhere((element) => element.id == deviceId);
+      var statusText = '${device.id}(${device.name}) is ${state.value}.';
+      setState(() {
+        _statusText = statusText;
+      });
+    });
+  }
 
   void _toggleScan() {
     if (_isScanning) {
       QuickBlue.stopScan();
-      _resetDeviceIdList();
+      _resetDeviceList();
     } else {
       QuickBlue.scanResultStream.listen((event) {
-        var deviceDesc = '${event.name} (${event.deviceId})';
-        Developer.log('discovered: $deviceDesc', name: 'bluetooth');
-        _addDeviceId(deviceDesc);
+        var deviceId = event.deviceId;
+        var deviceName = event.name;
+        Developer.log('discovered: $deviceId - $deviceName', name: 'bluetooth');
+        _addDevice(id: deviceId, name: deviceName);
       });
       QuickBlue.startScan();
     }
@@ -69,31 +92,68 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  void _addDeviceId(String deviceId) {
-    if (_deviceIdList.contains(deviceId)) {
+  void _addDevice({id: String, name: String}) {
+    if (-1 != _deviceList.indexWhere((element) => element.id == id)) {
       return;
     }
 
     setState(() {
-      _deviceIdList.add(deviceId);
+      _deviceList.add(DeviceDescriptor(id, name));
     });
   }
 
-  void _resetDeviceIdList() {
+  void _resetDeviceList() {
     setState(() {
-      _deviceIdList.clear();
+      _deviceList.clear();
     });
+  }
+
+  void _onTapDeviceRowAtIndex(int index) {
+    var deviceId = _deviceList[index].id;
+    QuickBlue.connect(deviceId);
+
+    if (_isScanning) {
+      QuickBlue.stopScan();
+      setState(() {
+        _isScanning = false;
+      });
+    }
+  }
+
+  ListView _renderDeviceListView() {
+    return ListView.builder(
+      itemBuilder: (context, index) {
+        return ListTile(
+          leading: Icon(Icons.bluetooth_outlined),
+          title: Text(_deviceList[index].id),
+          subtitle: Text(_deviceList[index].name),
+          onTap: () {
+            _onTapDeviceRowAtIndex(index);
+          },
+        );
+      },
+      itemCount: _deviceList.length,
+    );
+  }
+
+  Widget _renderStatusBar() {
+    return Container(
+      height: 32,
+      color: Colors.black12,
+      child: Center(
+        child: Text(_statusText),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    var deviceIdTextList = _deviceIdList.length > 0
-        ? _deviceIdList.map((e) => Text(e)).toList()
-        : [
-            Text(_isScanning
-                ? 'Searching...'
-                : 'Tap the bluetooth button to start scanning.')
-          ];
+    var statusBar = _renderStatusBar();
+    var contentView = _deviceList.length > 0
+        ? _renderDeviceListView()
+        : Text(_isScanning
+            ? 'Searching...'
+            : 'Tap the bluetooth button to start scanning.');
 
     // This method is rerun every time setState is called, for instance as done
     // by the _incrementCounter method above.
@@ -107,32 +167,18 @@ class _MyHomePageState extends State<MyHomePage> {
         // the App.build method, and use it to set our appbar title.
         title: Text(widget.title!),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Invoke "debug painting" (press "p" in the console, choose the
-          // "Toggle Debug Paint" action from the Flutter Inspector in Android
-          // Studio, or the "Toggle Debug Paint" command in Visual Studio Code)
-          // to see the wireframe for each widget.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: deviceIdTextList,
-        ),
+      body: Column(
+        children: <Widget>[
+          statusBar,
+          Expanded(child: contentView),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _toggleScan,
         tooltip: 'Scan Bluetooth Devices',
-        child: _isScanning ? RefreshProgressIndicator() : Icon(Icons.bluetooth),
+        child: _isScanning
+            ? RefreshProgressIndicator()
+            : Icon(Icons.bluetooth_searching),
       ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
