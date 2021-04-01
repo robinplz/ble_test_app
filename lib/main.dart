@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+
+import 'dart:typed_data';
+
 import 'package:quick_blue/quick_blue.dart';
+import 'package:quick_blue_platform_interface/quick_blue_platform_interface.dart';
+
 import 'dart:developer' as Developer;
 
 void main() {
@@ -59,18 +64,49 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isScanning = false;
   String _statusText = 'no device connected.';
 
+  void _connectionHandler(String deviceId, BlueConnectionState state) {
+    Developer.log('$deviceId ${state.value}', name: 'bluetooth');
+    var device = _deviceList.firstWhere((element) => element.id == deviceId);
+    var statusText = '${device.id}(${device.name}) is ${state.value}.';
+
+    if (state == BlueConnectionState.connected) {
+      QuickBlue.discoverServices(deviceId);
+    }
+
+    setState(() {
+      _statusText = statusText;
+    });
+  }
+
+  void _serviceHandler(String deviceId, String serviceId) {
+    const String DistoService = '3ab10100-f831-4395-b29d-570977d5bf94';
+    const String CharacteristicDistance =
+        '3ab10101-f831-4395-b29d-570977d5bf94';
+
+    if (serviceId == DistoService) {
+      QuickBlue.setNotifiable(
+          deviceId, serviceId, CharacteristicDistance, true);
+    }
+  }
+
+  void _valueHandler(
+      String deviceId, String characteristicId, Uint8List value) {
+    // BUG? the deviceId arg is always null.
+    //
+    var floatValue = value.buffer.asFloat32List(0, 1)[0];
+    var statusText = 'value from $deviceId - $characteristicId: $floatValue';
+    setState(() {
+      _statusText = statusText;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
 
-    QuickBlue.setConnectionHandler((deviceId, state) {
-      Developer.log('$deviceId ${state.value}', name: 'bluetooth');
-      var device = _deviceList.firstWhere((element) => element.id == deviceId);
-      var statusText = '${device.id}(${device.name}) is ${state.value}.';
-      setState(() {
-        _statusText = statusText;
-      });
-    });
+    QuickBlue.setConnectionHandler(_connectionHandler);
+    QuickBlue.setServiceHandler(_serviceHandler);
+    QuickBlue.setValueHandler(_valueHandler);
   }
 
   void _toggleScan() {
