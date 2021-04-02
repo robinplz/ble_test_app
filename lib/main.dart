@@ -5,7 +5,11 @@ import 'dart:typed_data';
 import 'package:quick_blue/quick_blue.dart';
 import 'package:quick_blue_platform_interface/quick_blue_platform_interface.dart';
 
+import 'dart:io' as Platform;
 import 'dart:developer' as Developer;
+
+const String DistoService = '3ab10100-f831-4395-b29d-570977d5bf94';
+const String CharacteristicDistance = '3ab10101-f831-4395-b29d-570977d5bf94';
 
 void main() {
   runApp(MyApp());
@@ -62,31 +66,43 @@ class DeviceDescriptor {
 class _MyHomePageState extends State<MyHomePage> {
   List<DeviceDescriptor> _deviceList = [];
   bool _isScanning = false;
-  String _statusText = 'no device connected.';
+  String _connectivityStatusText = 'no device connected.';
+  String _serviceStatusText = 'N/A';
+  String _valueStatusText = 'N/A';
 
   void _connectionHandler(String deviceId, BlueConnectionState state) {
     Developer.log('$deviceId ${state.value}', name: 'bluetooth');
     var device = _deviceList.firstWhere((element) => element.id == deviceId);
-    var statusText = '${device.id}(${device.name}) is ${state.value}.';
+    var statusText = '${device.id} (${device.name}) is ${state.value}.';
 
     if (state == BlueConnectionState.connected) {
-      QuickBlue.discoverServices(deviceId);
+      if (Platform.Platform.isWindows) {
+        // quick_blue does not implemented `discoverServices` for Windows,
+        // try set value notification directly.
+        QuickBlue.setNotifiable(
+            deviceId, DistoService, CharacteristicDistance, true);
+      } else {
+        QuickBlue.discoverServices(deviceId);
+      }
     }
 
     setState(() {
-      _statusText = statusText;
+      _connectivityStatusText = statusText;
     });
   }
 
   void _serviceHandler(String deviceId, String serviceId) {
-    const String DistoService = '3ab10100-f831-4395-b29d-570977d5bf94';
-    const String CharacteristicDistance =
-        '3ab10101-f831-4395-b29d-570977d5bf94';
+    var statusText = 'discovered service: $serviceId';
 
     if (serviceId == DistoService) {
+      statusText += ' (Disto service)';
       QuickBlue.setNotifiable(
           deviceId, serviceId, CharacteristicDistance, true);
     }
+
+    setState(() {
+      _serviceStatusText = statusText;
+    });
   }
 
   void _valueHandler(
@@ -96,7 +112,7 @@ class _MyHomePageState extends State<MyHomePage> {
     var floatValue = value.buffer.asFloat32List(0, 1)[0];
     var statusText = 'value from $deviceId - $characteristicId: $floatValue';
     setState(() {
-      _statusText = statusText;
+      _valueStatusText = statusText;
     });
   }
 
@@ -172,19 +188,28 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Widget _renderStatusBar() {
+  Widget _renderStatusBar(String message) {
     return Container(
       height: 32,
-      color: Colors.black12,
+      decoration: BoxDecoration(
+        color: Colors.black12,
+        border: Border(
+            bottom: BorderSide(
+          color: Colors.black45,
+          width: 1,
+        )),
+      ),
       child: Center(
-        child: Text(_statusText),
+        child: Text(message),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    var statusBar = _renderStatusBar();
+    var connectivityStatusBar = _renderStatusBar(_connectivityStatusText);
+    var serviceStatusBar = _renderStatusBar(_serviceStatusText);
+    var valueStatusBar = _renderStatusBar(_valueStatusText);
     var contentView = _deviceList.length > 0
         ? _renderDeviceListView()
         : Text(_isScanning
@@ -205,7 +230,9 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: Column(
         children: <Widget>[
-          statusBar,
+          connectivityStatusBar,
+          serviceStatusBar,
+          valueStatusBar,
           Expanded(child: contentView),
         ],
       ),
